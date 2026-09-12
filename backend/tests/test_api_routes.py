@@ -36,3 +36,25 @@ def test_security_headers_present():
     response = client.get("/healthz")
     assert response.headers.get("X-Content-Type-Options") == "nosniff"
     assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+def test_air_quality_endpoint():
+    response = client.get("/api/v1/weather/air-quality?lat=33.57&lon=-7.59")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert "usAqi" in data["data"]
+    assert "pm25" in data["data"]
+    assert "statusLabel" in data["data"]
+
+
+def test_city_compare_endpoint():
+    response = client.get("/api/v1/weather/compare")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) >= 1
+    station = data["data"][0]
+    assert "name" in station
+    assert "temperature" in station

@@ -4,11 +4,16 @@
 
 import { WeatherAtmosphereEngine } from './engine/weather-canvas.js';
 import { renderSunEphemeris } from './engine/sun-ephemeris.js';
+import { MoonPhaseEngine } from './engine/moon-phase.js';
 import { CitySearch } from './components/search.js';
 import { renderHourlyForecast } from './components/hourly-chart.js';
 import { renderDailyForecast } from './components/daily-forecast.js';
 import { renderMetricsBento } from './components/metrics-bento.js';
+import { renderAirQuality } from './components/air-quality.js';
 import { WeatherMap } from './components/weather-map.js';
+import { AmbientAudioEngine } from './components/ambient-audio.js';
+import { CityCompareModal } from './components/city-compare.js';
+import { FavoritesDrawer } from './components/favorites-drawer.js';
 import { getWeatherMeta } from './utils/weather-icons.js';
 import { weatherApi } from './services/api.js';
 import { storage } from './services/storage.js';
@@ -24,15 +29,19 @@ class StratosApp {
     };
 
     this.engine = null;
+    this.audioEngine = null;
     this.radarMap = null;
     this.search = null;
+    this.compareModal = null;
+    this.favoritesDrawer = null;
 
     this.init();
   }
 
   init() {
-    // 1. Initialize Atmospheric Canvas
+    // 1. Initialize Atmospheric Canvas & Audio
     this.engine = new WeatherAtmosphereEngine('weather-canvas');
+    this.audioEngine = new AmbientAudioEngine();
 
     // 2. Initialize Radar Map
     this.radarMap = new WeatherMap('radar-map-container');
@@ -44,7 +53,12 @@ class StratosApp {
       onSelectCity: (city) => this.loadCity(city),
     });
 
-    // 4. Unit Switcher Listener (°C / °F)
+    // 4. Initialize Modals & Drawers
+    this.compareModal = new CityCompareModal('comparison-modal');
+    this.favoritesDrawer = new FavoritesDrawer('favorites-drawer', 'favorites-backdrop');
+    window.stratosFavorites = this.favoritesDrawer;
+
+    // 5. Unit Switcher Listener (°C / °F)
     const unitToggleBtn = document.getElementById('unit-toggle-btn');
     if (unitToggleBtn) {
       unitToggleBtn.addEventListener('click', () => {
@@ -55,13 +69,13 @@ class StratosApp {
       unitToggleBtn.textContent = `°${storage.getUnit()}`;
     }
 
-    // 5. "Use My Location" GPS Button
+    // 6. "Use My Location" GPS Button
     const locationBtn = document.getElementById('geolocation-btn');
-    if (locationBtn) {
-      locationBtn.addEventListener('click', () => this.requestGeolocation());
-    }
+    const locationBtnMobile = document.getElementById('geolocation-btn-mobile');
+    if (locationBtn) locationBtn.addEventListener('click', () => this.requestGeolocation());
+    if (locationBtnMobile) locationBtnMobile.addEventListener('click', () => this.requestGeolocation());
 
-    // 6. Favorite City Action
+    // 7. Favorite City Action
     const favoriteBtn = document.getElementById('favorite-toggle-btn');
     if (favoriteBtn) {
       favoriteBtn.addEventListener('click', () => {
@@ -71,13 +85,14 @@ class StratosApp {
           storage.saveFavorite(this.currentCity);
         }
         this.updateFavoriteButton();
+        this.favoritesDrawer.renderList();
       });
     }
 
-    // 7. Load Default City (Casablanca, Morocco)
+    // 8. Load Default City (Casablanca, Morocco)
     this.loadCity(this.currentCity);
 
-    // 8. Auto-refresh every 5 minutes
+    // 9. Auto-refresh every 5 minutes
     setInterval(() => {
       if (this.currentCity) {
         this.loadCity(this.currentCity, true);
@@ -87,9 +102,7 @@ class StratosApp {
 
   async requestGeolocation() {
     const locationBtn = document.getElementById('geolocation-btn');
-    if (locationBtn) {
-      locationBtn.classList.add('animate-spin');
-    }
+    if (locationBtn) locationBtn.classList.add('animate-spin');
 
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser.');
@@ -121,9 +134,8 @@ class StratosApp {
         }
       },
       (err) => {
-        console.warn('Geolocation denied or unavailable:', err.message);
+        console.warn('Geolocation denied:', err.message);
         locationBtn?.classList.remove('animate-spin');
-        // Show subtle non-blocking notification
         const banner = document.getElementById('alert-banner');
         if (banner) {
           banner.classList.remove('hidden');
@@ -131,7 +143,7 @@ class StratosApp {
             <div class="p-3 bg-amber-950/80 border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-200">
               <div class="flex items-center gap-2">
                 <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                <span>Location access was declined. You can still search for any global city above.</span>
+                <span>Location access was declined. You can still search for any global station.</span>
               </div>
               <button onclick="this.parentElement.parentElement.classList.add('hidden')" class="text-amber-400 hover:text-white">&times;</button>
             </div>
@@ -153,9 +165,12 @@ class StratosApp {
       const data = await weatherApi.fetchForecast(city.latitude, city.longitude);
       this.currentData = data;
 
-      // Update atmospheric canvas condition
+      // Update atmospheric canvas & audio mood
       if (this.engine && data.current) {
         this.engine.setWeatherCondition(data.current.weatherCode, data.current.isNight);
+        if (this.audioEngine) {
+          this.audioEngine.setMode(this.engine.mode);
+        }
       }
 
       // Update radar map position
@@ -179,12 +194,19 @@ class StratosApp {
     renderDailyForecast('daily-forecast-container', this.currentData.daily);
     renderMetricsBento('metrics-bento-container', this.currentData.current);
     
+    // Air Quality
+    renderAirQuality('air-quality-container', this.currentData.airQuality);
+
+    // Celestial Ephemeris
     if (this.currentData.current) {
       renderSunEphemeris('sun-ephemeris-container', {
         sunrise: this.currentData.current.sunrise,
         sunset: this.currentData.current.sunset,
       });
     }
+
+    // Moon Phase Widget
+    MoonPhaseEngine.renderMoonWidget('moon-phase-container');
 
     this.updateFavoriteButton();
     this.updateLocalClock();
@@ -200,47 +222,42 @@ class StratosApp {
     const temp = storage.convertTemp(cur.temperature, unit);
     const feelsLike = storage.convertTemp(cur.apparentTemperature, unit);
 
-    // Get today's High and Low from daily data
     let high = '--', low = '--';
     if (this.currentData.daily && this.currentData.daily[0]) {
       high = storage.convertTemp(this.currentData.daily[0].tempMax, unit);
       low = storage.convertTemp(this.currentData.daily[0].tempMin, unit);
     }
 
-    // City & Country
     document.getElementById('hero-city-name').textContent = this.currentCity.name;
     document.getElementById('hero-country-name').textContent = this.currentCity.country;
 
-    // Coordinates pill
     const coordsEl = document.getElementById('hero-coords');
     if (coordsEl) {
       coordsEl.textContent = `${this.currentCity.latitude.toFixed(2)}°N, ${Math.abs(this.currentCity.longitude).toFixed(2)}°${this.currentCity.longitude < 0 ? 'W' : 'E'}`;
     }
 
-    // Temperature & Conditions
     document.getElementById('hero-temp-num').textContent = temp;
     document.getElementById('hero-unit-label').textContent = `°${unit}`;
     document.getElementById('hero-condition-text').textContent = meta.label;
     document.getElementById('hero-feels-like').textContent = `Feels like ${feelsLike}°`;
     document.getElementById('hero-high-low').textContent = `H: ${high}°  L: ${low}°`;
 
-    // Weather Icon
     const iconContainer = document.getElementById('hero-weather-icon');
     if (iconContainer) {
       iconContainer.innerHTML = meta.icon;
     }
 
-    // Severe Weather Alert Banner (Simulated intelligence advisory)
+    // Severe Weather Alert Banner
     const alertContainer = document.getElementById('alert-banner');
     if (alertContainer) {
-      if (cur.weatherCode >= 95 || cur.windSpeed > 60) {
+      if (cur.weatherCode >= 95 || cur.windSpeed > 55) {
         alertContainer.classList.remove('hidden');
         alertContainer.innerHTML = `
           <div class="p-4 bg-rose-950/80 border border-rose-500/40 rounded-2xl flex items-start gap-3 backdrop-blur-md shadow-2xl text-xs text-rose-100 mb-6">
             <svg class="w-5 h-5 text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
             <div class="flex-1">
               <div class="font-bold text-white text-sm">METEOROLOGICAL ADVISORY: ${meta.label.toUpperCase()}</div>
-              <div class="text-rose-200/90 mt-0.5">High convective atmospheric activity detected across the quadrant. Wind gusts reaching ${storage.formatWind(cur.windSpeed * 1.4, unit)}. Exercise caution on marine and exposed roadways.</div>
+              <div class="text-rose-200/90 mt-0.5">High convective atmospheric activity detected. Wind gusts reaching ${storage.formatWind(cur.windSpeed * 1.4, unit)}. Exercise caution on marine and exposed roadways.</div>
             </div>
             <button onclick="this.parentElement.parentElement.classList.add('hidden')" class="text-rose-300 hover:text-white p-1">&times;</button>
           </div>
@@ -254,7 +271,6 @@ class StratosApp {
   updateLocalClock() {
     const clockEl = document.getElementById('hero-local-time');
     if (!clockEl) return;
-
     const now = new Date();
     clockEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }

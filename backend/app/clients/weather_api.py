@@ -12,6 +12,7 @@ class WeatherApiClient:
     def __init__(self):
         self.weather_base = "https://api.open-meteo.com/v1/forecast"
         self.geocoding_base = "https://geocoding-api.open-meteo.com/v1/search"
+        self.air_quality_base = "https://air-quality-api.open-meteo.com/v1/air-quality"
         self.timeout = httpx.Timeout(8.0, connect=5.0)
 
     async def fetch_weather_forecast(self, lat: float, lon: float) -> Dict[str, Any]:
@@ -69,6 +70,28 @@ class WeatherApiClient:
             resp.raise_for_status()
             data = resp.json()
             return data.get("results", [])
+
+    async def fetch_air_quality(self, lat: float, lon: float) -> Dict[str, Any]:
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": [
+                "european_aqi",
+                "us_aqi",
+                "pm10",
+                "pm2_5",
+                "carbon_monoxide",
+                "nitrogen_dioxide",
+                "sulphur_dioxide",
+                "ozone",
+            ],
+            "timezone": "auto",
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(self.air_quality_base, params=params)
+            resp.raise_for_status()
+            return resp.json()
 
 
 weather_client = WeatherApiClient()

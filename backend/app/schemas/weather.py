@@ -52,8 +52,35 @@ class LocationMeta(BaseModel):
     timezone: Optional[str] = None
 
 
+class AirQualityData(BaseModel):
+    usAqi: int = Field(..., description="US EPA Air Quality Index (0-500)")
+    europeanAqi: int = Field(..., description="European Air Quality Index (0-100)")
+    pm25: float = Field(..., description="Fine particulate matter PM2.5 in µg/m³")
+    pm10: float = Field(..., description="Particulate matter PM10 in µg/m³")
+    carbonMonoxide: float = Field(..., description="Carbon Monoxide in µg/m³")
+    nitrogenDioxide: float = Field(..., description="Nitrogen Dioxide in µg/m³")
+    sulphurDioxide: float = Field(..., description="Sulphur Dioxide in µg/m³")
+    ozone: float = Field(..., description="Ground-level Ozone in µg/m³")
+    statusLabel: str = Field(..., description="Good, Moderate, Unhealthy, Hazardous")
+    healthAdvisory: str = Field(..., description="Clear health advisory text")
+
+
+class CityComparisonItem(BaseModel):
+    name: str
+    country: str
+    latitude: float
+    longitude: float
+    temperature: float
+    weatherCode: int
+    humidity: int
+    windSpeed: float
+    surfacePressure: float
+    uvIndex: float
+
+
 class FullWeatherResponse(BaseModel):
     current: CurrentWeather
     hourly: List[HourlyItem]
     daily: List[DailyItem]
     location: LocationMeta
+    airQuality: Optional[AirQualityData] = None
